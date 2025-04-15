@@ -1533,6 +1533,21 @@
             "default": null,
             "title": "Artifacts"
           },
+          "history": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/$defs/Message"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "History"
+          },
           "metadata": {
             "anyOf": [
               {
