@@ -8,7 +8,6 @@ from coder_agent import CoderAgent
 with open('xpander_config.json', 'r') as config_file:
     xpander_config: dict = json.load(config_file)
 
-# === Initialize Event Listener ===
 # Create a listener to subscribe to execution requests from specified agent(s)
 listener = XpanderEventListener(**xpander_config)
 
