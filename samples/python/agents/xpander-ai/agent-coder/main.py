@@ -1,31 +1,9 @@
-import json
-from xpander_utils.events import XpanderEventListener, AgentExecutionResult, AgentExecution, ExecutionStatus
-from xpander import get_agent, run_task
+from xpander import get_agent
+from coder_agent import CoderAgent
 
-# === Load Configuration ===
-# Reads API credentials and organization context from a local JSON file
-with open('xpander_config.json', 'r') as config_file:
-    xpander_config: dict = json.load(config_file)
-
-# Create a listener to subscribe to execution requests from specified agent(s)
-listener = XpanderEventListener(**xpander_config)
-
-xpander_agent = get_agent()
-# === Define Execution Handler ===
-def on_execution_request(execution_task: AgentExecution) -> AgentExecutionResult:
-    """
-    Callback triggered when an execution request is received from a registered agent.
-    
-    Args:
-        execution_task (AgentExecution): Object containing execution metadata and input.
-
-    Returns:
-        AgentExecutionResult: Object describing the output of the execution.
-    """
-    execution_status = run_task(xpander_agent, execution_task)
-    return AgentExecutionResult(result=execution_status.result,is_success=True if execution_status.status == ExecutionStatus.COMPLETED else False)
-
-# === Register Callback ===
-# Attach your custom handler to the listener
-print("📥 Waiting for execution requests...")
-listener.register(on_execution_request=on_execution_request)
+if __name__ == "__main__":
+    agent = get_agent() ## will come from the CLI
+    coder_agent = CoderAgent(agent=agent)
+    # result = run_task(AgentExecution(input="Hello, how are you?"))
+    thread = coder_agent.chat("Hello, what's your role?")
+    coder_agent.chat("what did I ask you?",thread)

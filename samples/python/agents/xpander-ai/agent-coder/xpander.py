@@ -1,8 +1,7 @@
 import json
 import os
-from typing import Optional
 from dotenv import load_dotenv
-from xpander_sdk import XpanderClient, LLMProvider, Agent, Execution
+from xpander_sdk import XpanderClient, Agent, Execution
 from xpander_utils.events import AgentExecution
 from coder_agent import CoderAgent
 # Setup
@@ -99,31 +98,5 @@ def get_agent():
     return agent
 
 def run_task(agent: Agent, execution_task: AgentExecution) -> Execution:
-    agent.init_task(execution=execution_task.model_dump())
-    agent.memory.llm_provider = LLMProvider.AMAZON_BEDROCK
-    
-    return CoderAgent(agent=agent, xpander_client=xpander_client)._agent_loop()
-
-def chat(agent: Agent, user_input: str, thread_id: Optional[str] = None):
-    """
-    Starts the conversation with the user and handles the interaction with Bedrock.
-    """
-    if thread_id:
-        print(f"🧠 Adding task to existing thread : {thread_id}")
-        agent.add_task(input=user_input, thread_id=thread_id)
-    else:
-        print("🧠 Adding task to a new thread")
-        agent.add_task(input=user_input)
-
-    agent.memory.llm_provider = LLMProvider.AMAZON_BEDROCK
-    agent_thread = CoderAgent(agent=agent, xpander_client=xpander_client)._agent_loop()
-
-    print(f"\n🧠 Thread {agent_thread.memory_thread_id}\n🤖 Agent response: {agent_thread.result}")
-    return agent_thread.memory_thread_id
-
-if __name__ == "__main__":
-    agent = get_agent()
-    # result = run_task(AgentExecution(input="Hello, how are you?"))
-    chat(agent, "Hello, what's your role?")
-    # print(f"🧠 Thread ID: {result.memory_thread_id}")
-    # print(f"🤖 Result: {result.result}") 
+    agent.init_task(execution=execution_task.model_dump())    
+    return CoderAgent(agent=agent)._agent_loop()
