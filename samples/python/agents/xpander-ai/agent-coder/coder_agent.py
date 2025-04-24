@@ -2,8 +2,8 @@ from typing import Optional
 import boto3
 from os import environ
 from dotenv import load_dotenv
-from xpander_sdk import Agent, LLMProvider, XpanderClient
-
+from xpander_sdk import Agent, LLMProvider, XpanderClient, ToolCallResult
+from local_tools import local_tools_by_name, local_tools_list
 # Load environment variables
 load_dotenv()
 
@@ -18,8 +18,7 @@ class CoderAgent:
     def __init__(self, agent: Agent):
         self.agent = agent
         self.agent.select_llm_provider(LLMProvider.AMAZON_BEDROCK)
-
-        
+        self.agent.add_local_tools(local_tools_list)
         # Setup Bedrock client
         if AWS_PROFILE:
             session = boto3.Session(profile_name=AWS_PROFILE)
@@ -67,10 +66,38 @@ class CoderAgent:
                 system=self.agent.memory.system_message
             )
             self.agent.add_messages(response)
+            
             # Execute tools if needed
             tool_calls = self.agent.extract_tool_calls(
                 llm_response=response
             )
+            
+            # Run local tools (If any)
+            pending_local_tool_execution = XpanderClient.retrieve_pending_local_tool_calls(tool_calls=tool_calls)
+            
+            if pending_local_tool_execution:
+                local_tools_results = []
+                for tc in pending_local_tool_execution:
+                    print(f"🛠️ Running local tool: {tc.name}")
+                    tool_call_result = ToolCallResult(function_name=tc.name, tool_call_id=tc.tool_call_id, payload=tc.payload)
+                    try:
+                        if tc.name in local_tools_by_name:
+                            tool_call_result.is_success = True
+                            tool_call_result.result = local_tools_by_name[tc.name](**tc.payload)
+                        else:
+                            raise Exception(f"Local tool {tc.name} not found")
+                    except Exception as e:
+                        tool_call_result.is_success = False
+                        tool_call_result.is_error = True
+                        tool_call_result.result = str(e)
+                    finally:
+                        local_tools_results.append(tool_call_result)
+
+                if local_tools_results:
+                    print(f"📝 Registering {len(local_tools_results)} local tool results...")
+                    self.agent.memory.add_tool_call_results(tool_call_results=local_tools_results)
+            
+            # Run cloud tools
             if tool_calls:
                 print("🧩 Tools: " + " | ".join(f"{call.name}" for call in tool_calls))
                 results = self.agent.run_tools(tool_calls=tool_calls)

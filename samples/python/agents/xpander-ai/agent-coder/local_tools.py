@@ -370,193 +370,208 @@ def execute_command(command: Union[str, List[str]], cwd: Optional[str] = None) -
             "error": str(e)
         }
 
-# Tool schemas for integration with a model or agent
-TOOL_SCHEMAS = {
-    "git_create_branch": {
-        "name": "git_create_branch",
-        "description": "Create a new Git branch and switch to it",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "branch_name": {
-                    "type": "string",
-                    "description": "Name of the branch to create"
-                }
-            },
-            "required": ["branch_name"]
-        }
-    },
-    "git_clone": {
-        "name": "git_clone",
-        "description": "Clone a Git repository",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "repo_url": {
-                    "type": "string",
-                    "description": "URL of the Git repository to clone"
-                },
-                "target_dir": {
-                    "type": "string",
-                    "description": "Optional target directory for the clone (default: auto-named by Git)"
-                }
-            },
-            "required": ["repo_url"]
-        }
-    },
-    "git_commit_changes": {
-        "name": "git_commit_changes",
-        "description": "Commit changes to Git repository",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "description": "Commit message"
-                },
-                "add_all": {
-                    "type": "boolean",
-                    "description": "Whether to add all changes (git add .) before commit",
-                    "default": True
-                }
-            },
-            "required": ["message"]
-        }
-    },
-    "git_push_changes": {
-        "name": "git_push_changes",
-        "description": "Push commits to remote repository",
-        "parameters": {
-            "type": "object", 
-            "properties": {
-                "remote": {
-                    "type": "string",
-                    "description": "Remote repository name",
-                    "default": "origin"
-                },
-                "branch": {
-                    "type": "string",
-                    "description": "Branch to push (default: current branch)"
+# Set up local tools
+local_tools = [
+    {
+        "declaration": {
+            "type": "function",
+            "function": {
+                "name": "git_create_branch",
+                "description": "Create a new Git branch and switch to it",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "branch_name": {
+                            "type": "string",
+                            "description": "Name of the branch to create"
+                        }
+                    },
+                    "required": ["branch_name"]
                 }
             }
-        }
+        },
+        "fn": git_create_branch
     },
-    "git_status": {
-        "name": "git_status",
-        "description": "Get the current Git repository status",
-        "parameters": {
-            "type": "object",
-            "properties": {}
-        }
-    },
-    "read_file": {
-        "name": "read_file",
-        "description": "Read contents of a file",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "filepath": {
-                    "type": "string",
-                    "description": "Path to the file to read"
-                }
-            },
-            "required": ["filepath"]
-        }
-    },
-    "write_file": {
-        "name": "write_file", 
-        "description": "Write content to a file",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "filepath": {
-                    "type": "string",
-                    "description": "Path to the file to write"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Content to write to the file"
-                },
-                "create_dirs": {
-                    "type": "boolean",
-                    "description": "Whether to create parent directories if they don't exist",
-                    "default": True
-                }
-            },
-            "required": ["filepath", "content"]
-        }
-    },
-    "list_directory": {
-        "name": "list_directory",
-        "description": "List contents of a directory",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "directory": {
-                    "type": "string",
-                    "description": "Path to the directory to list",
-                    "default": "."
+    {
+        "declaration": {
+            "type": "function",
+            "function": {
+                "name": "git_clone",
+                "description": "Clone a Git repository",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "repo_url": {
+                            "type": "string",
+                            "description": "URL of the Git repository to clone"
+                        },
+                        "target_dir": {
+                            "type": "string",
+                            "description": "Optional target directory for the clone (default: auto-named by Git)"
+                        }
+                    },
+                    "required": ["repo_url"]
                 }
             }
-        }
+        },
+        "fn": git_clone
     },
-    "execute_command": {
-        "name": "execute_command",
-        "description": "Execute a shell command",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "Command to execute"
-                },
-                "cwd": {
-                    "type": "string",
-                    "description": "Working directory for the command"
+    {
+        "declaration": {
+            "type": "function",
+            "function": {
+                "name": "git_commit_changes",
+                "description": "Commit changes to Git repository",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "message": {
+                            "type": "string",
+                            "description": "Commit message"
+                        },
+                        "add_all": {
+                            "type": "boolean",
+                            "description": "Whether to add all changes (git add .) before commit"
+                        }
+                    },
+                    "required": ["message"]
                 }
-            },
-            "required": ["command"]
-        }
+            }
+        },
+        "fn": git_commit_changes
+    },
+    {
+        "declaration": {
+            "type": "function",
+            "function": {
+                "name": "git_push_changes",
+                "description": "Push commits to remote repository",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "remote": {
+                            "type": "string",
+                            "description": "Remote repository name"
+                        },
+                        "branch": {
+                            "type": "string",
+                            "description": "Branch to push (default: current branch)"
+                        }
+                    },
+                    "required": []
+                }
+            }
+        },
+        "fn": git_push_changes
+    },
+    {
+        "declaration": {
+            "type": "function",
+            "function": {
+                "name": "git_status",
+                "description": "Get the current Git repository status",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        },
+        "fn": git_status
+    },
+    {
+        "declaration": {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read contents of a file",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filepath": {
+                            "type": "string",
+                            "description": "Path to the file to read"
+                        }
+                    },
+                    "required": ["filepath"]
+                }
+            }
+        },
+        "fn": read_file
+    },
+    {
+        "declaration": {
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "Write content to a file",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filepath": {
+                            "type": "string",
+                            "description": "Path to the file to write"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Content to write to the file"
+                        },
+                        "create_dirs": {
+                            "type": "boolean",
+                            "description": "Whether to create parent directories if they don't exist"
+                        }
+                    },
+                    "required": ["filepath", "content"]
+                }
+            }
+        },
+        "fn": write_file
+    },
+    {
+        "declaration": {
+            "type": "function",
+            "function": {
+                "name": "list_directory",
+                "description": "List contents of a directory",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "directory": {
+                            "type": "string",
+                            "description": "Path to the directory to list"
+                        }
+                    },
+                    "required": []
+                }
+            }
+        },
+        "fn": list_directory
+    },
+    {
+        "declaration": {
+            "type": "function",
+            "function": {
+                "name": "execute_command",
+                "description": "Execute a shell command",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "Command to execute"
+                        },
+                        "cwd": {
+                            "type": "string",
+                            "description": "Working directory for the command"
+                        }
+                    },
+                    "required": ["command"]
+                }
+            }
+        },
+        "fn": execute_command
     }
-}
+]
 
-# Function dispatch mapping for tool execution
-TOOL_DISPATCH = {
-    "git_create_branch": git_create_branch,
-    "git_clone": git_clone,
-    "git_commit_changes": git_commit_changes,
-    "git_push_changes": git_push_changes,
-    "git_status": git_status,
-    "read_file": read_file,
-    "write_file": write_file,
-    "list_directory": list_directory,
-    "execute_command": execute_command
-}
-
-def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Execute a tool by name with the given parameters
-    
-    Args:
-        tool_name: Name of the tool to execute
-        parameters: Parameters to pass to the tool
-        
-    Returns:
-        dict: Result of the tool execution
-    """
-    if tool_name not in TOOL_DISPATCH:
-        return {
-            "success": False,
-            "message": f"Tool '{tool_name}' not found"
-        }
-    
-    try:
-        tool_function = TOOL_DISPATCH[tool_name]
-        return tool_function(**parameters)
-    except Exception as e:
-        logger.error(f"Tool execution failed: {e}")
-        return {
-            "success": False,
-            "message": f"Failed to execute tool '{tool_name}': {e}",
-            "error": str(e)
-        }
+local_tools_list = [tool['declaration'] for tool in local_tools]
+local_tools_by_name = {tool['declaration']['function']['name']: tool['fn'] for tool in local_tools}
