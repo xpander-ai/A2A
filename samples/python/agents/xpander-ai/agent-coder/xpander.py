@@ -86,7 +86,6 @@ def get_agent():
             agent.instructions.general = default_instructions['general']
             agent.instructions.goal = default_instructions['goal']
             agent.instructions.role = default_instructions['role']
-    
     # Step 4: Ensure config is up to date
     config.update({
         'organization_id': agent.organization_id,
@@ -95,7 +94,8 @@ def get_agent():
     })
     with open('xpander_config.json', 'w') as f:
         json.dump(config, f, indent=2)
-    
+    print("🤖 Agent is ready")
+    print(f"Check the agent in the xpander dashboard: https://app.xpander.ai/agents/{agent.id}")
     return agent
 
 def run_task(agent: Agent, execution_task: AgentExecution) -> Execution:

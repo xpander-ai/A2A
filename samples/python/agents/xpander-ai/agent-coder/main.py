@@ -1,6 +1,6 @@
 import json
 from xpander_utils.events import XpanderEventListener, AgentExecutionResult, AgentExecution, ExecutionStatus
-from xpander import get_agent, run_task, chat
+from xpander import get_agent, run_task
 
 # === Load Configuration ===
 # Reads API credentials and organization context from a local JSON file
@@ -27,4 +27,5 @@ def on_execution_request(execution_task: AgentExecution) -> AgentExecutionResult
 
 # === Register Callback ===
 # Attach your custom handler to the listener
+print("📥 Waiting for execution requests...")
 listener.register(on_execution_request=on_execution_request)
