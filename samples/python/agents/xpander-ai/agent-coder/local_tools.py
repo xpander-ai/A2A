@@ -212,30 +212,108 @@ def git_status() -> Dict[str, Any]:
         }
 
 # File operations functions
-def read_file(filepath: str) -> Dict[str, Any]:
+def read_file(filepath: str, start_line: Optional[int] = None, end_line: Optional[int] = None, max_lines: int = 50) -> Dict[str, Any]:
     """
-    Read contents of a file
+    Read contents of a file, optionally specifying line ranges
     
     Args:
         filepath: Path to the file to read
+        start_line: Line number to start reading from (1-indexed, optional)
+        end_line: Line number to end reading at (1-indexed, inclusive, optional)
+        max_lines: Maximum number of lines to read when no range is specified (default: 50)
         
     Returns:
         dict: Result with success status and file contents
     """
     try:
         with open(filepath, 'r') as file:
-            content = file.read()
-        
-        return {
-            "success": True,
-            "message": f"File '{filepath}' read successfully",
-            "content": content
-        }
+            # Read all lines so we can count them
+            lines = file.readlines()
+            total_lines = len(lines)
+            
+            if start_line is not None or end_line is not None:
+                # Read specific line range
+                # Validate line numbers
+                if start_line is None:
+                    start_line = 1
+                if end_line is None:
+                    end_line = total_lines
+                
+                # Adjust for 1-indexed input
+                start_idx = max(0, start_line - 1)
+                end_idx = min(total_lines, end_line)
+                
+                if start_idx >= len(lines) or start_idx < 0:
+                    return {
+                        "success": False,
+                        "message": f"Invalid start_line: {start_line}. File has {total_lines} lines.",
+                        "total_lines": total_lines
+                    }
+                
+                content = ''.join(lines[start_idx:end_idx])
+                
+                return {
+                    "success": True,
+                    "message": f"File '{filepath}' read successfully (lines {start_line}-{end_line})",
+                    "content": content,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "total_lines": total_lines
+                }
+            else:
+                # Read with default limit
+                if total_lines > max_lines:
+                    content = ''.join(lines[:max_lines])
+                    return {
+                        "success": True,
+                        "message": f"File '{filepath}' read successfully (first {max_lines} of {total_lines} lines)",
+                        "content": content,
+                        "start_line": 1,
+                        "end_line": max_lines,
+                        "total_lines": total_lines,
+                        "truncated": True
+                    }
+                else:
+                    # File is smaller than max_lines, return everything
+                    content = ''.join(lines)
+                    return {
+                        "success": True,
+                        "message": f"File '{filepath}' read successfully",
+                        "content": content,
+                        "total_lines": total_lines
+                    }
     except Exception as e:
         logger.error(f"File read failed for {filepath}: {e}")
         return {
             "success": False,
             "message": f"Failed to read file '{filepath}': {e}",
+            "error": str(e)
+        }
+
+def count_file_lines(filepath: str) -> Dict[str, Any]:
+    """
+    Count the number of lines in a file
+    
+    Args:
+        filepath: Path to the file to count lines
+        
+    Returns:
+        dict: Result with success status and line count
+    """
+    try:
+        with open(filepath, 'r') as file:
+            line_count = sum(1 for _ in file)
+        
+        return {
+            "success": True,
+            "message": f"Line count for '{filepath}' retrieved successfully",
+            "line_count": line_count
+        }
+    except Exception as e:
+        logger.error(f"File line count failed for {filepath}: {e}")
+        return {
+            "success": False,
+            "message": f"Failed to count lines in file '{filepath}': {e}",
             "error": str(e)
         }
 
@@ -484,13 +562,25 @@ local_tools = [
             "type": "function",
             "function": {
                 "name": "read_file",
-                "description": "Read contents of a file",
+                "description": "Read contents of a file, optionally specifying line ranges",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "filepath": {
                             "type": "string",
                             "description": "Path to the file to read"
+                        },
+                        "start_line": {
+                            "type": "integer",
+                            "description": "Line number to start reading from (1-indexed, optional)"
+                        },
+                        "end_line": {
+                            "type": "integer",
+                            "description": "Line number to end reading at (1-indexed, inclusive, optional)"
+                        },
+                        "max_lines": {
+                            "type": "integer",
+                            "description": "Maximum number of lines to read when no range is specified (default: 50)"
                         }
                     },
                     "required": ["filepath"]
@@ -570,6 +660,26 @@ local_tools = [
             }
         },
         "fn": execute_command
+    },
+    {
+        "declaration": {
+            "type": "function",
+            "function": {
+                "name": "count_file_lines",
+                "description": "Count the number of lines in a file",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filepath": {
+                            "type": "string",
+                            "description": "Path to the file to count lines"
+                        }
+                    },
+                    "required": ["filepath"]
+                }
+            }
+        },
+        "fn": count_file_lines
     }
 ]
 

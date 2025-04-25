@@ -1,3 +1,5 @@
+import asyncio
+import inspect
 from typing import Optional
 import boto3
 from os import environ
@@ -66,57 +68,72 @@ class CoderAgent:
                 system=self.agent.memory.system_message
             )
             self.agent.add_messages(response)
+
+            ## Parallel execution of tools
             
             # Execute tools if needed
-            tool_calls = self.agent.extract_tool_calls(
-                llm_response=response
-            )
+            tool_calls = self.agent.extract_tool_calls(llm_response=response)
             
-            for tool in tool_calls:
-                if tool.type == ToolCallType.LOCAL:
-                    print(f"🛠️ Executing local tool: {tool.name}")
-                    ## Prepare tool call object
-                    tool_call_result = ToolCallResult(function_name=tool.name,tool_call_id=tool.tool_call_id,payload=tool.payload)
-                    payload_from_function = local_tools_by_name[tool.name](**tool.payload)
-                    if('success' in payload_from_function):
-                        if(payload_from_function['success']):
-                            tool_call_result.is_success = True
-                        else:
-                            tool_call_result.is_error = True
-                    tool_call_result.result = payload_from_function
-                    self.agent.memory.add_tool_call_results(tool_call_results=[tool_call_result])
-                    print(f"✅ {tool_call_result.function_name}" if tool_call_result.is_success else f"❌ {tool_call_result.function_name}")
-                if tool.type == ToolCallType.XPANDER:
-                    print(f"🛠️ Executing cloud tool: {tool.name}")
-                    result : ToolCallResult = self.agent.run_tool(tool=tool)
-                    print(f"✅ {result.function_name}" if result.is_success else f"❌ {result.function_name}")
-            ## Tool_calls will now contain remaining local tool calls if any
+            # execute non local tools - in parallel
+            cloud_tool_call_results = self.agent.run_tools(tool_calls=tool_calls)
             
-            # # Run local tools (If any)
-            # pending_local_tool_execution = XpanderClient.retrieve_pending_local_tool_calls(tool_calls=tool_calls)
-            # if pending_local_tool_execution:
-            #     local_tools_results = []
-            #     for tc in pending_local_tool_execution:
-            #         print(f"Extracting payload for local tool: {tc.name}")
-            #         tool_call_result = ToolCallResult(function_name=tc.name, tool_call_id=tc.tool_call_id, payload=tc.payload)
-            #         try:
-            #             if tc.name in local_tools_by_name:
-            #                 tool_call_result.is_success = True
-            #                 print(f"🛠️ Executing local tool: {tc.name}")
-            #                 tool_call_result.result = local_tools_by_name[tc.name](**tc.payload)
-            #             else:
-            #                 raise Exception(f"Local tool {tc.name} not found")
-            #         except Exception as e:
-            #             tool_call_result.is_success = False
-            #             tool_call_result.is_error = True
-            #             tool_call_result.result = str(e)
-            #         finally:
-            #             local_tools_results.append(tool_call_result)
+            # retrieve tool calls for local execution
+            local_tool_calls = XpanderClient.retrieve_pending_local_tool_calls(tool_calls=tool_calls)
+            cloud_tool_call_results[:] = [c for c in cloud_tool_call_results if c.tool_call_id not in {t.tool_call_id for t in local_tool_calls}]
+            
+            # execute local tools - in parallel
+            local_tool_call_results = asyncio.run(self._execute_local_tools_in_parallel(local_tool_calls))
 
-            #     if local_tools_results:
-            #         print(f"📝 Registering {len(local_tools_results)} local tool results...")
-            #         self.agent.memory.add_tool_call_results(tool_call_results=local_tools_results)
-           
+            # report local tool call results
+            if len(local_tool_call_results) != 0:
+                self.agent.memory.add_tool_call_results(tool_call_results=local_tool_call_results)
+            
+            # print the results
+            all_tool_call_results = cloud_tool_call_results + local_tool_call_results
+            
+            for result in all_tool_call_results:
+                emoji = "✅" if result.is_success else "❌"
+                print(f"{emoji} {result.function_name}")
+                
             step += 1
             
         return self.agent.retrieve_execution_result()
+
+    async def _execute_local_tools_in_parallel(self, local_tool_calls):
+        tasks = [self._execute_local_tool(tool) for tool in local_tool_calls]
+        return await asyncio.gather(*tasks)
+    
+    async def _execute_local_tool(self, tool):
+        print(f"🔦 Executing local tool: {tool.name} with generated payload: {tool.payload}")
+        tool_call_result = ToolCallResult(function_name=tool.name, tool_call_id=tool.tool_call_id, payload=tool.payload)
+        
+        # Validate parameters for both async and non-async functions
+        sig = inspect.signature(local_tools_by_name[tool.name])
+        valid_params = sig.parameters.keys()
+        invalid_params = [k for k in tool.payload.keys() if k not in valid_params]
+        if invalid_params:
+            return {
+                "success": False, 
+                "message": f"Invalid parameters for {tool.name}: {', '.join(invalid_params)}",
+                "invalid_params": invalid_params
+            }
+        
+        # Execute the function based on its type
+        if asyncio.iscoroutinefunction(local_tools_by_name[tool.name]):
+            local_tool_response = await local_tools_by_name[tool.name](**tool.payload)
+        else:
+            # Create a wrapper function that handles the unpacking of kwargs
+            def run_func():
+                return local_tools_by_name[tool.name](**tool.payload)
+                
+            loop = asyncio.get_event_loop()
+            local_tool_response = await loop.run_in_executor(None, run_func)
+
+        if 'success' in local_tool_response:
+            if local_tool_response['success']:
+                tool_call_result.is_success = True
+            else:
+                tool_call_result.is_success = False
+
+        tool_call_result.result = local_tool_response
+        return tool_call_result
