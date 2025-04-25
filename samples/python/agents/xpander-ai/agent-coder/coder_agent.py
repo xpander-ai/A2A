@@ -2,7 +2,7 @@ from typing import Optional
 import boto3
 from os import environ
 from dotenv import load_dotenv
-from xpander_sdk import Agent, LLMProvider, XpanderClient, ToolCallResult
+from xpander_sdk import Agent, LLMProvider, XpanderClient, ToolCallResult, ToolCallType
 from local_tools import local_tools_by_name, local_tools_list
 # Load environment variables
 load_dotenv()
@@ -72,39 +72,51 @@ class CoderAgent:
                 llm_response=response
             )
             
-            # Run local tools (If any)
-            pending_local_tool_execution = XpanderClient.retrieve_pending_local_tool_calls(tool_calls=tool_calls)
-            
-            if pending_local_tool_execution:
-                local_tools_results = []
-                for tc in pending_local_tool_execution:
-                    print(f"🛠️ Running local tool: {tc.name}")
-                    tool_call_result = ToolCallResult(function_name=tc.name, tool_call_id=tc.tool_call_id, payload=tc.payload)
-                    try:
-                        if tc.name in local_tools_by_name:
+            for tool in tool_calls:
+                if tool.type == ToolCallType.LOCAL:
+                    print(f"🛠️ Executing local tool: {tool.name}")
+                    ## Prepare tool call object
+                    tool_call_result = ToolCallResult(function_name=tool.name,tool_call_id=tool.tool_call_id,payload=tool.payload)
+                    payload_from_function = local_tools_by_name[tool.name](**tool.payload)
+                    if('success' in payload_from_function):
+                        if(payload_from_function['success']):
                             tool_call_result.is_success = True
-                            tool_call_result.result = local_tools_by_name[tc.name](**tc.payload)
                         else:
-                            raise Exception(f"Local tool {tc.name} not found")
-                    except Exception as e:
-                        tool_call_result.is_success = False
-                        tool_call_result.is_error = True
-                        tool_call_result.result = str(e)
-                    finally:
-                        local_tools_results.append(tool_call_result)
-
-                if local_tools_results:
-                    print(f"📝 Registering {len(local_tools_results)} local tool results...")
-                    self.agent.memory.add_tool_call_results(tool_call_results=local_tools_results)
+                            tool_call_result.is_error = True
+                    tool_call_result.result = payload_from_function
+                    self.agent.memory.add_tool_call_results(tool_call_results=[tool_call_result])
+                    print(f"✅ {tool_call_result.function_name}" if tool_call_result.is_success else f"❌ {tool_call_result.function_name}")
+                if tool.type == ToolCallType.XPANDER:
+                    print(f"🛠️ Executing cloud tool: {tool.name}")
+                    result : ToolCallResult = self.agent.run_tool(tool=tool)
+                    print(f"✅ {result.function_name}" if result.is_success else f"❌ {result.function_name}")
+            ## Tool_calls will now contain remaining local tool calls if any
             
-            # Run cloud tools
-            if tool_calls:
-                print("🧩 Tools: " + " | ".join(f"{call.name}" for call in tool_calls))
-                results = self.agent.run_tools(tool_calls=tool_calls)
-                print(" | ".join(
-                    f"✅ {r.function_name}" if r.is_success else f"❌ {r.function_name}"
-                    for r in results
-                ))
+            # # Run local tools (If any)
+            # pending_local_tool_execution = XpanderClient.retrieve_pending_local_tool_calls(tool_calls=tool_calls)
+            # if pending_local_tool_execution:
+            #     local_tools_results = []
+            #     for tc in pending_local_tool_execution:
+            #         print(f"Extracting payload for local tool: {tc.name}")
+            #         tool_call_result = ToolCallResult(function_name=tc.name, tool_call_id=tc.tool_call_id, payload=tc.payload)
+            #         try:
+            #             if tc.name in local_tools_by_name:
+            #                 tool_call_result.is_success = True
+            #                 print(f"🛠️ Executing local tool: {tc.name}")
+            #                 tool_call_result.result = local_tools_by_name[tc.name](**tc.payload)
+            #             else:
+            #                 raise Exception(f"Local tool {tc.name} not found")
+            #         except Exception as e:
+            #             tool_call_result.is_success = False
+            #             tool_call_result.is_error = True
+            #             tool_call_result.result = str(e)
+            #         finally:
+            #             local_tools_results.append(tool_call_result)
+
+            #     if local_tools_results:
+            #         print(f"📝 Registering {len(local_tools_results)} local tool results...")
+            #         self.agent.memory.add_tool_call_results(tool_call_results=local_tools_results)
+           
             step += 1
             
         return self.agent.retrieve_execution_result()
