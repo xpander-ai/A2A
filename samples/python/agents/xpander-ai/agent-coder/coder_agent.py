@@ -57,16 +57,8 @@ class CoderAgent:
         else:
             print("🧠 Adding task to a new thread")
             self.agent.add_task(input=user_input)
-
-        # # Set up the sandbox once at the beginning
-        # sandbox.get_sandbox(thread_id)
-        
         # Run the agent loop
         agent_thread = self._agent_loop()
-        
-        # # Update sandbox with final thread ID
-        # result_thread_id = agent_thread.memory_thread_id
-        # sandbox.sandboxes[result_thread_id] = sandbox.current_sandbox
         
         print(f"📝 Last message: {self.agent.messages[-1]['content'][-1]}")
         print(f"🧠 AI Agent response: {agent_thread.result}")

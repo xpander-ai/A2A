@@ -73,18 +73,19 @@ def read_file(file_path: str) -> Dict[str, Any]:
     """
     return sandbox.read_file(file_path)
 
-def commit(message: str, branch_name: str) -> Dict[str, Any]:
+def commit(message: str, branch_name: str, repository: Optional[str] = None) -> Dict[str, Any]:
     """
     Commit changes and push to a new branch
     
     Args:
         message: Commit message
         branch_name: Name of the branch to create and push to
+        repository: Name of the repository to commit to (if not specified, uses the first found)
         
     Returns:
         Dictionary with commit status and message
     """
-    return sandbox.commit(message, branch_name)
+    return sandbox.commit(message, branch_name, repository)
 
 # Set up local tools
 local_tools = [
@@ -211,6 +212,10 @@ local_tools = [
                         "branch_name": {
                             "type": "string",
                             "description": "Name of the branch to create and push to"
+                        },
+                        "repository": {
+                            "type": "string",
+                            "description": "Name of the repository to commit to (if not specified, uses the first found)"
                         }
                     },
                     "required": ["message", "branch_name"]

@@ -211,30 +211,78 @@ def read_file(file_path: str, thread_id: Optional[str] = None) -> Dict[str, Any]
             "content": ""
         }
 
-def commit(message: str, branch_name: str, thread_id: Optional[str] = None) -> Dict[str, Any]:
+def commit(message: str, branch_name: str, repository: Optional[str] = None, thread_id: Optional[str] = None) -> Dict[str, Any]:
     """Commit changes and push to a new branch"""
     sandbox_path = get_sandbox_path(thread_id)
     
     try:
-        # Configure git
-        subprocess.run(
-            ["git", "config", "user.name", "Agent"],
-            cwd=sandbox_path,
-            check=True,
-            capture_output=True
+        # Find git repositories in the sandbox (directories with .git subdirectory)
+        git_dirs = {}
+        for item in os.listdir(sandbox_path):
+            item_path = os.path.join(sandbox_path, item)
+            git_path = os.path.join(item_path, ".git")
+            if os.path.isdir(item_path) and os.path.exists(git_path):
+                git_dirs[item] = item_path
+        
+        if not git_dirs:
+            return {
+                "success": False,
+                "message": "No Git repositories found in the sandbox"
+            }
+        
+        # Use the specified repository or list available ones
+        if repository:
+            if repository in git_dirs:
+                repo_path = git_dirs[repository]
+                repo_name = repository
+            else:
+                return {
+                    "success": False,
+                    "message": f"Repository '{repository}' not found. Available repositories: {', '.join(git_dirs.keys())}"
+                }
+        else:
+            # No repository specified, use the first one found but with a warning
+            repo_name = next(iter(git_dirs.keys()))
+            repo_path = git_dirs[repo_name]
+            print(f"Warning: No repository specified, using '{repo_name}'. Available repositories: {', '.join(git_dirs.keys())}")
+        
+        # Configure git only if not already configured
+        # Check if user.name is configured
+        name_check = subprocess.run(
+            ["git", "config", "user.name"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True
         )
         
-        subprocess.run(
-            ["git", "config", "user.email", "agent@example.com"],
-            cwd=sandbox_path,
-            check=True,
-            capture_output=True
+        if name_check.returncode != 0 or not name_check.stdout.strip():
+            subprocess.run(
+                ["git", "config", "user.name", "AI Agent"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True
+            )
+        
+        # Check if user.email is configured
+        email_check = subprocess.run(
+            ["git", "config", "user.email"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True
         )
+        
+        if email_check.returncode != 0 or not email_check.stdout.strip():
+            subprocess.run(
+                ["git", "config", "user.email", "agent@xpander.ai"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True
+            )
         
         # Create a new branch
         branch_result = subprocess.run(
             ["git", "checkout", "-b", branch_name],
-            cwd=sandbox_path,
+            cwd=repo_path,
             capture_output=True,
             text=True
         )
@@ -248,7 +296,7 @@ def commit(message: str, branch_name: str, thread_id: Optional[str] = None) -> D
         # Add all changes
         add_result = subprocess.run(
             ["git", "add", "."],
-            cwd=sandbox_path,
+            cwd=repo_path,
             capture_output=True,
             text=True
         )
@@ -262,7 +310,7 @@ def commit(message: str, branch_name: str, thread_id: Optional[str] = None) -> D
         # Commit changes
         commit_result = subprocess.run(
             ["git", "commit", "-m", message],
-            cwd=sandbox_path,
+            cwd=repo_path,
             capture_output=True,
             text=True
         )
@@ -276,7 +324,7 @@ def commit(message: str, branch_name: str, thread_id: Optional[str] = None) -> D
         # Push to origin
         push_result = subprocess.run(
             ["git", "push", "origin", branch_name],
-            cwd=sandbox_path,
+            cwd=repo_path,
             capture_output=True,
             text=True
         )
@@ -290,9 +338,10 @@ def commit(message: str, branch_name: str, thread_id: Optional[str] = None) -> D
         
         return {
             "success": True,
-            "message": f"Successfully committed and pushed to branch {branch_name}",
+            "message": f"Successfully committed and pushed to branch {branch_name} in repository {repo_name}",
             "commit_hash": commit_result.stdout.strip(),
-            "branch": branch_name
+            "branch": branch_name,
+            "repository": repo_name
         }
     except Exception as e:
         return {
