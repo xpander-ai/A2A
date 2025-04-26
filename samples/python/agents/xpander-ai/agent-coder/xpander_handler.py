@@ -9,7 +9,7 @@ with open('xpander_config.json', 'r') as config_file:
 
 # Create a listener to subscribe to execution requests from specified agent(s)
 listener = XpanderEventListener(**xpander_config)
-xpander_agent = get_agent()
+xpander_agent = get_agent() ## Todo- move outside the function and deal with thread id
 # === Define Execution Handler ===
 def on_execution_request(execution_task: AgentExecution) -> AgentExecutionResult:
     """
@@ -21,7 +21,9 @@ def on_execution_request(execution_task: AgentExecution) -> AgentExecutionResult
     Returns:
         AgentExecutionResult: Object describing the output of the execution.
     """
-
+    
+    ## Work around
+    
     execution_status = run_task(xpander_agent, execution_task)
     return AgentExecutionResult(result=execution_status.result,is_success=True if execution_status.status == ExecutionStatus.COMPLETED else False)
 
@@ -29,4 +31,3 @@ def on_execution_request(execution_task: AgentExecution) -> AgentExecutionResult
 # Attach your custom handler to the listener
 print("📥 Waiting for execution requests...")
 listener.register(on_execution_request=on_execution_request)
-# chat(xpander_agent, "Hello, what's your role?")

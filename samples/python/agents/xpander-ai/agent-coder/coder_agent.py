@@ -55,21 +55,26 @@ class CoderAgent:
             print("🧠 Adding task to a new thread")
             self.agent.add_task(input=user_input)
 
-        # Set up the sandbox once at the beginning
-        sandbox.get_sandbox(thread_id)
+        # # Set up the sandbox once at the beginning
+        # sandbox.get_sandbox(thread_id)
         
         # Run the agent loop
         agent_thread = self._agent_loop()
         
-        # Update sandbox with final thread ID
-        result_thread_id = agent_thread.memory_thread_id
-        sandbox.sandboxes[result_thread_id] = sandbox.current_sandbox
+        # # Update sandbox with final thread ID
+        # result_thread_id = agent_thread.memory_thread_id
+        # sandbox.sandboxes[result_thread_id] = sandbox.current_sandbox
         
         print(f"🧠 AI Agent response: {agent_thread.result}")
-        return result_thread_id
+        return agent_thread.memory_thread_id
 
     def _agent_loop(self):
         """Run the agent interaction loop"""
+        
+        ## Thread id 
+        print(f"🧠 Thread id: {self.agent.memory.id}")
+        sandbox.get_sandbox(self.agent.memory.id)
+        
         step = 1
         print("🪄 Starting Agent Loop")
         while not self.agent.is_finished():
@@ -113,8 +118,9 @@ class CoderAgent:
                 
             step += 1
             
+        sandbox.sandboxes[self.agent.memory.id] = sandbox.current_sandbox
         return self.agent.retrieve_execution_result()
-
+    
     async def _execute_local_tools_in_parallel(self, local_tool_calls):
         tasks = [self._execute_local_tool(tool) for tool in local_tool_calls]
         return await asyncio.gather(*tasks)
