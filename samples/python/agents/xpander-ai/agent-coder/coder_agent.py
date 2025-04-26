@@ -1,13 +1,16 @@
+"""
+Copyright (c) 2025 Xpander, Inc. All rights reserved.
+"""
+
 import asyncio
 import inspect
-import os
 from typing import Optional, Dict, Callable, Any
 import boto3
 from os import environ
 from dotenv import load_dotenv
 from xpander_sdk import Agent, LLMProvider, XpanderClient, ToolCallResult, MemoryStrategy
 from local_tools import local_tools_by_name, local_tools_list
-import sandbox  # Import our sandbox module
+import sandbox
 
 # Load environment variables
 load_dotenv()

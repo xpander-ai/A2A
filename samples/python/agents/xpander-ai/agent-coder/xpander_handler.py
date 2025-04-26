@@ -1,3 +1,7 @@
+"""
+Copyright (c) 2025 Xpander, Inc. All rights reserved.
+"""
+
 import json
 from xpander_utils.events import XpanderEventListener, AgentExecutionResult, AgentExecution, ExecutionStatus
 from xpander import get_agent, run_task

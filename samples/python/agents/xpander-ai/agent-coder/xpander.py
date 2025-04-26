@@ -1,3 +1,7 @@
+"""
+Copyright (c) 2025 Xpander, Inc. All rights reserved.
+"""
+
 import json
 import os
 from dotenv import load_dotenv

@@ -1,3 +1,7 @@
+"""
+Copyright (c) 2024 Xpander, Inc. All rights reserved.
+"""
+
 import os
 import uuid
 import subprocess

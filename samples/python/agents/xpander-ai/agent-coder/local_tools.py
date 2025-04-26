@@ -1,3 +1,7 @@
+"""
+Copyright (c) 2025 Xpander, Inc. All rights reserved.
+"""
+
 import os
 import logging
 from typing import Dict, Any, Optional

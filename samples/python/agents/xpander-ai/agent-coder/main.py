@@ -1,3 +1,7 @@
+"""
+Copyright (c) 2025 Xpander, Inc. All rights reserved.
+"""
+
 from xpander import get_agent
 from coder_agent import CoderAgent
 
