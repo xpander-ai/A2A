@@ -65,6 +65,7 @@ class CoderAgent:
         result_thread_id = agent_thread.memory_thread_id
         sandbox.sandboxes[result_thread_id] = sandbox.current_sandbox
         
+        print(f"🧠 AI Agent response: {agent_thread.result}")
         return result_thread_id
 
     def _agent_loop(self):
@@ -165,10 +166,8 @@ class CoderAgent:
             else:
                 tool_call_result.is_success = True
             
-            # Normalize paths in the response to hide real system paths
-            # Just use the current sandbox, no thread_id needed
-            normalized_response = sandbox.normalize_response_paths(local_tool_response)
-            tool_call_result.result = normalized_response
+            # Use the response directly instead of normalizing paths
+            tool_call_result.result = local_tool_response
             
         except Exception as e:
             import traceback
