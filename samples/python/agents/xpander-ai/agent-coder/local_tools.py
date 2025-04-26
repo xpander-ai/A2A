@@ -1,7 +1,12 @@
 import os
 import subprocess
-from typing import Dict, List, Any, Optional, Union
+import difflib
+import shlex
+from typing import Dict, List, Any, Optional, Union, Tuple
 import logging
+import time
+import json
+import sandbox
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -40,53 +45,87 @@ def git_create_branch(branch_name: str) -> Dict[str, Any]:
 
 def git_clone(repo_url: str, target_dir: Optional[str] = None) -> Dict[str, Any]:
     """
-    Clone a Git repository
+    Clone a git repository securely.
     
     Args:
-        repo_url: URL of the Git repository to clone
-        target_dir: Optional target directory for the clone (default: auto-named by Git)
+        repo_url: URL of the git repository to clone
+        target_dir: Directory to clone into
         
     Returns:
-        dict: Result with success status and message
+        Dictionary with clone status and any output/error
     """
     try:
-        # Build the command
-        command = ["git", "clone", repo_url]
-        if target_dir:
-            command.append(target_dir)
+        # Create directory if it doesn't exist
+        if target_dir and not os.path.exists(target_dir):
+            os.makedirs(target_dir, exist_ok=True)
             
-        # Execute the clone
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        # Clean target directory name from repo URL
+        repo_name = repo_url.split('/')[-1]
+        if repo_name.endswith('.git'):
+            repo_name = repo_name[:-4]
+            
+        # Set timeout to prevent hanging on network issues
+        timeout_seconds = 60
         
-        # Determine the directory name that was created
+        # Clone the repository with controlled environment and timeout
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"  # Disable authentication prompts
+        
+        cmd = ["git", "clone", "--depth", "1", repo_url]
         if target_dir:
-            clone_dir = target_dir
+            cmd.append(target_dir)
+            
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                env=env
+            )
+            clone_success = result.returncode == 0
+            stderr = result.stderr
+            stdout = result.stdout
+        except subprocess.TimeoutExpired:
+            clone_success = False
+            stderr = f"Git clone timed out after {timeout_seconds} seconds"
+            stdout = ""
+            
+        # Check if clone worked by verifying .git exists
+        clone_dir = target_dir if target_dir else repo_name
+        if clone_success and not os.path.exists(os.path.join(clone_dir, '.git')):
+            clone_success = False
+            stderr += "\nClone appears to have failed: .git directory not found"
+            
+        if clone_success:
+            return {
+                "success": True,
+                "message": f"Repository cloned successfully to {os.path.basename(clone_dir)}",
+                "stdout": stdout,
+                "target_dir": os.path.basename(clone_dir)
+            }
         else:
-            # Extract repository name from URL
-            # For URLs like https://github.com/user/repo.git or git@github.com:user/repo.git
-            # This extracts 'repo'
-            repo_name = repo_url.split('/')[-1]
-            if repo_name.endswith('.git'):
-                repo_name = repo_name[:-4]
-            clone_dir = repo_name
-        
-        return {
-            "success": True,
-            "message": f"Repository cloned successfully to '{clone_dir}'",
-            "output": result.stdout,
-            "clone_dir": clone_dir
-        }
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Git clone failed: {e}")
+            # Diagnostic information for failed clones
+            error_message = stderr
+            if "could not resolve host" in stderr.lower():
+                error_message = "Network error: Could not resolve the repository host."
+            elif "authentication failed" in stderr.lower():
+                error_message = "Authentication error: Private repository requires authentication."
+            elif "repository not found" in stderr.lower():
+                error_message = "Repository not found. Check the URL and try again."
+                
+            return {
+                "success": False,
+                "error": error_message,
+                "stdout": stdout,
+                "stderr": stderr,
+                "target_dir": os.path.basename(clone_dir)
+            }
+    except Exception as e:
         return {
             "success": False,
-            "message": f"Failed to clone repository: {e}",
-            "error": e.stderr
+            "error": f"Error cloning repository: {str(e)}",
+            "repo_url": repo_url
         }
 
 def git_commit_changes(message: str, add_all: bool = True) -> Dict[str, Any]:
@@ -212,240 +251,360 @@ def git_status() -> Dict[str, Any]:
         }
 
 # File operations functions
-def read_file(filepath: str, start_line: Optional[int] = None, end_line: Optional[int] = None, max_lines: int = 50) -> Dict[str, Any]:
+def read_file(filepath: str) -> Dict[str, Any]:
     """
-    Read contents of a file, optionally specifying line ranges
+    Read the content of a file securely within the sandbox.
     
     Args:
         filepath: Path to the file to read
-        start_line: Line number to start reading from (1-indexed, optional)
-        end_line: Line number to end reading at (1-indexed, inclusive, optional)
-        max_lines: Maximum number of lines to read when no range is specified (default: 50)
         
     Returns:
-        dict: Result with success status and file contents
+        Dictionary with file content or error
     """
     try:
-        with open(filepath, 'r') as file:
-            # Read all lines so we can count them
-            lines = file.readlines()
-            total_lines = len(lines)
+        # Check if file exists
+        if not os.path.exists(filepath):
+            return {
+                "success": False,
+                "error": f"File not found: {os.path.basename(filepath)}"
+            }
+        
+        # Read the file content
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
             
-            if start_line is not None or end_line is not None:
-                # Read specific line range
-                # Validate line numbers
-                if start_line is None:
-                    start_line = 1
-                if end_line is None:
-                    end_line = total_lines
-                
-                # Adjust for 1-indexed input
-                start_idx = max(0, start_line - 1)
-                end_idx = min(total_lines, end_line)
-                
-                if start_idx >= len(lines) or start_idx < 0:
-                    return {
-                        "success": False,
-                        "message": f"Invalid start_line: {start_line}. File has {total_lines} lines.",
-                        "total_lines": total_lines
-                    }
-                
-                content = ''.join(lines[start_idx:end_idx])
-                
-                return {
-                    "success": True,
-                    "message": f"File '{filepath}' read successfully (lines {start_line}-{end_line})",
-                    "content": content,
-                    "start_line": start_line,
-                    "end_line": end_line,
-                    "total_lines": total_lines
-                }
-            else:
-                # Read with default limit
-                if total_lines > max_lines:
-                    content = ''.join(lines[:max_lines])
-                    return {
-                        "success": True,
-                        "message": f"File '{filepath}' read successfully (first {max_lines} of {total_lines} lines)",
-                        "content": content,
-                        "start_line": 1,
-                        "end_line": max_lines,
-                        "total_lines": total_lines,
-                        "truncated": True
-                    }
-                else:
-                    # File is smaller than max_lines, return everything
-                    content = ''.join(lines)
-                    return {
-                        "success": True,
-                        "message": f"File '{filepath}' read successfully",
-                        "content": content,
-                        "total_lines": total_lines
-                    }
+        return {
+            "success": True,
+            "content": content,
+            "filepath": os.path.basename(filepath)
+        }
     except Exception as e:
-        logger.error(f"File read failed for {filepath}: {e}")
         return {
             "success": False,
-            "message": f"Failed to read file '{filepath}': {e}",
-            "error": str(e)
+            "error": f"Error reading file: {str(e)}",
+            "filepath": filepath
         }
 
 def count_file_lines(filepath: str) -> Dict[str, Any]:
     """
-    Count the number of lines in a file
+    Count the number of lines in a file securely within the sandbox.
     
     Args:
-        filepath: Path to the file to count lines
+        filepath: Path to the file to count lines in
         
     Returns:
-        dict: Result with success status and line count
+        Dictionary with line count or error
     """
     try:
-        with open(filepath, 'r') as file:
-            line_count = sum(1 for _ in file)
+        # Ensure path is inside the sandbox
+        safe_path = sandbox.get_sandbox(filepath=filepath)
         
+        # Security check - confirm path is still safe before reading
+        if not os.path.exists(safe_path):
+            return {
+                "success": False,
+                "error": f"File not found: {os.path.basename(filepath)}"
+            }
+        
+        # Count the lines
+        with open(safe_path, 'r', encoding='utf-8', errors='replace') as f:
+            line_count = sum(1 for _ in f)
+            
         return {
             "success": True,
-            "message": f"Line count for '{filepath}' retrieved successfully",
-            "line_count": line_count
+            "line_count": line_count,
+            "filepath": os.path.basename(filepath)
         }
     except Exception as e:
-        logger.error(f"File line count failed for {filepath}: {e}")
         return {
             "success": False,
-            "message": f"Failed to count lines in file '{filepath}': {e}",
-            "error": str(e)
+            "error": f"Error counting lines: {str(e)}",
+            "filepath": filepath
         }
 
-def write_file(filepath: str, content: str, create_dirs: bool = True) -> Dict[str, Any]:
+def write_file(filepath: str, content: str) -> Dict[str, Any]:
     """
-    Write content to a file
+    Write content to a file securely within the sandbox.
     
     Args:
         filepath: Path to the file to write
         content: Content to write to the file
-        create_dirs: Whether to create parent directories if they don't exist
         
     Returns:
-        dict: Result with success status and message
+        Dictionary with status and any error
     """
     try:
-        # Create parent directories if needed
-        if create_dirs:
-            directory = os.path.dirname(filepath)
-            if directory and not os.path.exists(directory):
-                os.makedirs(directory)
+        # Ensure path is inside the sandbox
+        safe_path = sandbox.get_sandbox(filepath=filepath)
         
-        with open(filepath, 'w') as file:
-            file.write(content)
-        
+        # Create the parent directory if it doesn't exist
+        parent_dir = os.path.dirname(safe_path)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, exist_ok=True)
+            
+        # Write the content to the file
+        with open(safe_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+            
         return {
             "success": True,
-            "message": f"Content written to '{filepath}' successfully",
-            "filepath": filepath
+            "message": f"File written successfully: {os.path.basename(filepath)}",
+            "filepath": os.path.basename(filepath)
         }
     except Exception as e:
-        logger.error(f"File write failed for {filepath}: {e}")
         return {
             "success": False,
-            "message": f"Failed to write to file '{filepath}': {e}",
-            "error": str(e)
+            "error": f"Error writing file: {str(e)}",
+            "filepath": filepath
         }
 
 def list_directory(directory: str = '.') -> Dict[str, Any]:
     """
-    List contents of a directory
+    List the contents of a directory securely within the sandbox.
     
     Args:
         directory: Path to the directory to list (default: current directory)
         
     Returns:
-        dict: Result with success status and directory contents
+        Dictionary with directory contents or error
     """
     try:
-        items = os.listdir(directory)
+        # Block access to system directories
+        for blocked_path in sandbox.BLOCKED_SYSTEM_PATHS:
+            if blocked_path in directory:
+                return {
+                    "success": False,
+                    "error": f"Security error: Access to {blocked_path} is restricted",
+                    "directory": directory
+                }
         
-        # Get additional info about each item
-        contents = []
-        for item in items:
-            item_path = os.path.join(directory, item)
-            item_type = "directory" if os.path.isdir(item_path) else "file"
-            item_size = os.path.getsize(item_path) if os.path.isfile(item_path) else None
+        # Handle empty directory or '.' case
+        if not directory or directory.strip() == '' or directory == '.':
+            directory = '.'
+        
+        # Additional checks for root directory or traversal attempts
+        if directory == '/' or directory == '~/':
+            return {
+                "success": False,
+                "error": "Security error: Listing root directory is not allowed",
+                "directory": directory
+            }
             
-            contents.append({
-                "name": item,
-                "type": item_type,
-                "size": item_size
-            })
+        # Block attempts to list system directories
+        if directory in ['/etc', '/var', '/usr', '/bin', '/sbin']:
+            return {
+                "success": False,
+                "error": f"Security error: Listing {directory} is not allowed",
+                "directory": directory
+            }
         
-        return {
-            "success": True,
-            "message": f"Directory '{directory}' listed successfully",
-            "contents": contents
-        }
+        # Ensure path is inside the sandbox
+        safe_path = sandbox.get_sandbox(filepath=directory)
+        
+        # Security check - confirm path is still safe before listing
+        if not os.path.exists(safe_path):
+            # Try to create the directory if it doesn't exist
+            try:
+                os.makedirs(safe_path, exist_ok=True)
+                print(f"Notice: Created directory {os.path.basename(directory)}")
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": f"Directory not found and could not be created: {os.path.basename(directory)}",
+                    "details": str(e)
+                }
+
+        if not os.path.isdir(safe_path):
+            return {
+                "success": False,
+                "error": f"Path exists but is not a directory: {os.path.basename(directory)}",
+                "path_type": "file" if os.path.isfile(safe_path) else "unknown"
+            }
+        
+        # List the directory contents
+        try:
+            items = os.listdir(safe_path)
+            
+            # Get additional information about each item
+            contents = []
+            for item in items:
+                item_path = os.path.join(safe_path, item)
+                is_dir = os.path.isdir(item_path)
+                size = None
+                if not is_dir:
+                    try:
+                        size = os.path.getsize(item_path)
+                    except:
+                        size = -1  # Indicate error getting size
+                        
+                contents.append({
+                    "name": item,
+                    "type": "directory" if is_dir else "file",
+                    "size": size
+                })
+                
+            return {
+                "success": True,
+                "contents": contents,
+                "directory": os.path.basename(directory) or os.path.basename(safe_path),
+                "path": safe_path  # Include the full path for diagnostics
+            }
+        except PermissionError:
+            return {
+                "success": False,
+                "error": f"Permission denied when listing directory: {os.path.basename(directory)}",
+                "path": safe_path
+            }
+            
     except Exception as e:
-        logger.error(f"Directory listing failed for {directory}: {e}")
         return {
             "success": False,
-            "message": f"Failed to list directory '{directory}': {e}",
-            "error": str(e)
+            "error": f"Error listing directory: {str(e)}",
+            "directory": directory
         }
 
 # Terminal execution function
-def execute_command(command: Union[str, List[str]], cwd: Optional[str] = None) -> Dict[str, Any]:
+def execute_command(command: str, cwd: Optional[str] = None) -> Dict[str, Any]:
     """
-    Execute a shell command
+    Execute a shell command securely in the sandbox environment.
     
     Args:
-        command: Command to execute (string or list of arguments)
-        cwd: Working directory for the command
+        command: The command to execute
+        cwd: The working directory to execute the command in
         
     Returns:
-        dict: Result with success status, stdout, and stderr
+        Dictionary with command output and status
     """
     try:
-        # Convert string command to list if needed
-        if isinstance(command, str):
-            # Simple shell=True execution for string commands
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                cwd=cwd
-            )
-        else:
-            # List-based execution (preferred for security)
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                cwd=cwd
-            )
+        # Block known system commands and network access commands
+        blocked_commands = [
+            'ps', 'top', 'htop', 'netstat', 'ifconfig', 'ping',
+            'curl', 'wget', 'cat /etc', 'find /', 'ls /', 'uname -a'
+        ]
         
-        # Check if command succeeded
-        if result.returncode == 0:
-            return {
-                "success": True,
-                "message": "Command executed successfully",
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "returncode": result.returncode
-            }
-        else:
+        for blocked in blocked_commands:
+            if command.startswith(blocked) or f" {blocked}" in command:
+                return {
+                    "success": False,
+                    "error": f"Security error: Command '{blocked}' is not allowed",
+                    "command": command
+                }
+        
+        # Block system directory access
+        for blocked_path in sandbox.BLOCKED_SYSTEM_PATHS:
+            if blocked_path in command:
+                return {
+                    "success": False,
+                    "error": f"Security error: Access to {blocked_path} is restricted",
+                    "command": command
+                }
+        
+        # Security validation - ensure the command doesn't attempt to escape the sandbox
+        try:
+            sandbox.validate_command(command)
+        except ValueError as e:
             return {
                 "success": False,
-                "message": f"Command failed with return code {result.returncode}",
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "returncode": result.returncode
+                "error": str(e),
+                "command": command
             }
-    except Exception as e:
-        logger.error(f"Command execution failed: {e}")
+        
+        # Handle cwd parameter - ensure it exists
+        if cwd:
+            safe_cwd = sandbox.get_sandbox(filepath=cwd)
+            if not os.path.exists(safe_cwd):
+                try:
+                    os.makedirs(safe_cwd, exist_ok=True)
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "error": f"Working directory does not exist and could not be created: {str(e)}",
+                        "command": command
+                    }
+        else:
+            safe_cwd = sandbox.get_sandbox()
+        
+        # Special handling for Python scripts - use our secure execution wrapper
+        if command.startswith('python ') or command.startswith('python3 '):
+            parts = command.split()
+            interpreter = parts[0]
+            
+            # Extract the script path from the command
+            if len(parts) > 1:
+                # Check if the part is an actual Python script or just a flag
+                if parts[1].endswith('.py'):
+                    script_path = parts[1]
+                    args = parts[2:] if len(parts) > 2 else None
+                    
+                    # Check if script exists in the current directory
+                    full_script_path = os.path.join(safe_cwd, script_path)
+                    if not os.path.exists(full_script_path) and not os.path.isabs(script_path):
+                        # It might be a script in the parent directory of the sandbox
+                        # Try to find it by name
+                        alt_script_path = os.path.join(sandbox.current_sandbox, script_path)
+                        if os.path.exists(alt_script_path):
+                            script_path = alt_script_path
+                    
+                    result = sandbox.secure_python_execution(script_path, args)
+                    return {
+                        "success": result["returncode"] == 0,
+                        "stdout": result["stdout"],
+                        "stderr": result["stderr"],
+                        "command": command,
+                        "script_path": script_path
+                    }
+        
+        # Set up a restricted environment for the command
+        restricted_env = {
+            "PATH": os.environ.get("PATH", ""),
+            "PYTHONPATH": safe_cwd,
+            "SANDBOX_RESTRICTED": "1",  # Flag to indicate we're in a restricted environment
+            "HOME": safe_cwd,  # Redirect home directory to the sandbox
+            "TMPDIR": safe_cwd  # Redirect temporary directory to the sandbox
+        }
+        
+        # Remove potentially dangerous environment variables
+        for dangerous_var in ["LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", 
+                             "DYLD_LIBRARY_PATH", "PYTHONHOME", "PYTHONSTARTUP"]:
+            restricted_env.pop(dangerous_var, None)
+        
+        # For non-Python commands, execute directly but with controlled environment
+        starttime = time.time()
+        result = subprocess.run(
+            command, 
+            shell=True, 
+            cwd=safe_cwd,
+            capture_output=True, 
+            text=True,
+            timeout=30,  # Add a timeout to prevent long-running commands
+            env=restricted_env  # Use restricted environment
+        )
+        endtime = time.time()
+        
+        return {
+            "success": result.returncode == 0,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "command": command,
+            "time_taken": endtime - starttime
+        }
+    except subprocess.TimeoutExpired:
         return {
             "success": False,
-            "message": f"Failed to execute command: {e}",
-            "error": str(e)
+            "error": "Command timed out after 30 seconds",
+            "command": command
+        }
+    except ValueError as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "command": command
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Error executing command: {str(e)}",
+            "command": command
         }
 
 # Set up local tools
@@ -594,7 +753,7 @@ local_tools = [
             "type": "function",
             "function": {
                 "name": "write_file",
-                "description": "Write content to a file",
+                "description": "Write content to a file with various modes, including line-specific edits. Returns a diff of changes made.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -605,6 +764,18 @@ local_tools = [
                         "content": {
                             "type": "string",
                             "description": "Content to write to the file"
+                        },
+                        "mode": {
+                            "type": "string",
+                            "description": "Writing mode - 'overwrite' (replace entire file), 'replace' (replace specific lines), 'insert' (insert at line)"
+                        },
+                        "start_line": {
+                            "type": "integer",
+                            "description": "Line number to start replacement/insertion (1-indexed, required for replace/insert modes)"
+                        },
+                        "end_line": {
+                            "type": "integer",
+                            "description": "Line number to end replacement (1-indexed, inclusive, required for replace mode)"
                         },
                         "create_dirs": {
                             "type": "boolean",
