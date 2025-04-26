@@ -1,5 +1,5 @@
 """
-Copyright (c) 2024 Xpander, Inc. All rights reserved.
+Copyright (c) 2025 Xpander, Inc. All rights reserved.
 """
 
 import os
@@ -88,13 +88,14 @@ def git_clone(repo_url: str, branch: Optional[str] = None, thread_id: Optional[s
     sandbox_path = get_sandbox_path(thread_id)
     
     try:
-        # Clear the sandbox directory first
-        for item in os.listdir(sandbox_path):
-            item_path = os.path.join(sandbox_path, item)
-            if os.path.isdir(item_path):
-                shutil.rmtree(item_path)
-            else:
-                os.remove(item_path)
+        # Extract repository name from URL
+        target_dir = repo_url.split("/")[-1]
+        if target_dir.endswith(".git"):
+            target_dir = target_dir[:-4]
+        
+        # Create the target directory
+        target_path = os.path.join(sandbox_path, target_dir)
+        os.makedirs(target_path, exist_ok=True)
         
         # Build the git clone command
         cmd = ["git", "clone", repo_url, "."]
@@ -104,7 +105,7 @@ def git_clone(repo_url: str, branch: Optional[str] = None, thread_id: Optional[s
         # Execute the git clone command
         result = subprocess.run(
             cmd,
-            cwd=sandbox_path,
+            cwd=target_path,
             capture_output=True,
             text=True,
             timeout=120  # 2 minute timeout
@@ -113,13 +114,13 @@ def git_clone(repo_url: str, branch: Optional[str] = None, thread_id: Optional[s
         return {
             "success": result.returncode == 0,
             "message": result.stdout if result.returncode == 0 else result.stderr,
-            "directory": ""  # Normalized to sandbox root
+            "directory": target_dir  # Return the directory name
         }
     except Exception as e:
         return {
             "success": False,
             "message": f"Error cloning repository: {str(e)}",
-            "directory": ""
+            "directory": target_dir if target_dir else ""
         }
 
 def describe_folders_and_files(thread_id: Optional[str] = None) -> Dict[str, Any]:
